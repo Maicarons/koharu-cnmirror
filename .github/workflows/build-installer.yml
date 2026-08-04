@@ -29,14 +29,18 @@ jobs:
       - name: Export LIBCLANG_PATH
         shell: bash
         run: |
-          # install-llvm-action does not reliably export `llvm-path` on Windows,
-          # so probe the known install locations for libclang.dll / clang.dll.
+          # install-llvm-action writes LLVM_PATH (e.g. C:\Program Files\LLVM) to
+          # $GITHUB_ENV on success. bindgen's clang-sys runs as a NATIVE Windows
+          # process, so LIBCLANG_PATH must be a native Windows path (drive letter
+          # + slashes), NOT the MSYS "/c/..." form that bash uses — the native
+          # process cannot resolve "/c/Program Files/LLVM/bin" (seen as invalid: []).
+          LLVM_ROOT="${LLVM_PATH:-C:\\Program Files\\LLVM}"
           candidates=(
-            "${{ steps.llvm.outputs.llvm-path }}/bin"
-            "/c/Program Files/LLVM/bin"
-            "/c/Program Files/LLVM/lib"
-            "/c/Program Files (x86)/LLVM/bin"
-            "/c/LLVM/bin"
+            "$LLVM_ROOT/bin"
+            "C:/Program Files/LLVM/bin"
+            "C:/Program Files/LLVM/lib"
+            "C:/Program Files (x86)/LLVM/bin"
+            "C:/LLVM/bin"
           )
           LIBCLANG_PATH=""
           for d in "${candidates[@]}"; do
