@@ -29,18 +29,34 @@ jobs:
       - name: Export LIBCLANG_PATH
         shell: bash
         run: |
-          # install-llvm-action exports `llvm-path`; libclang.dll lives in its bin/.
-          LLVM_BIN="${{ steps.llvm.outputs.llvm-path }}/bin"
-          if [ ! -f "$LLVM_BIN/libclang.dll" ] && [ ! -f "$LLVM_BIN/clang.dll" ]; then
-            for d in "/c/Program Files/LLVM/bin" "/c/llvm/bin" "/c/Program Files (x86)/LLVM/bin"; do
-              if [ -f "$d/libclang.dll" ] || [ -f "$d/clang.dll" ]; then
-                LLVM_BIN="$d"; break
-              fi
-            done
+          # install-llvm-action does not reliably export `llvm-path` on Windows,
+          # so probe the known install locations for libclang.dll / clang.dll.
+          candidates=(
+            "${{ steps.llvm.outputs.llvm-path }}/bin"
+            "/c/Program Files/LLVM/bin"
+            "/c/Program Files/LLVM/lib"
+            "/c/Program Files (x86)/LLVM/bin"
+            "/c/LLVM/bin"
+          )
+          LIBCLANG_PATH=""
+          for d in "${candidates[@]}"; do
+            [ -z "$d" ] && continue
+            if [ -f "$d/libclang.dll" ] || [ -f "$d/clang.dll" ]; then
+              LIBCLANG_PATH="$d"
+              break
+            fi
+          done
+          if [ -z "$LIBCLANG_PATH" ]; then
+            echo "::error::libclang.dll not found in candidate paths"
+            echo "::group::LLVM dir listing (C:\\Program Files\\LLVM)"
+            ls -la "/c/Program Files/LLVM" 2>/dev/null || true
+            ls -la "/c/Program Files/LLVM/bin" 2>/dev/null | head -50 || true
+            echo "::endgroup::"
+            exit 1
           fi
-          echo "LIBCLANG_PATH=$LLVM_BIN" >> "$GITHUB_ENV"
-          echo "libclang-path=$LLVM_BIN" >> "$GITHUB_OUTPUT"
-          echo "Resolved LIBCLANG_PATH=$LLVM_BIN"
+          echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> "$GITHUB_ENV"
+          echo "libclang-path=$LIBCLANG_PATH" >> "$GITHUB_OUTPUT"
+          echo "Resolved LIBCLANG_PATH=$LIBCLANG_PATH"
 
       - uses: oven-sh/setup-bun@v2
 
