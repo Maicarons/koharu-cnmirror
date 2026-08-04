@@ -26,6 +26,22 @@ jobs:
         with:
           version: "17"
 
+      - name: Export LIBCLANG_PATH
+        shell: bash
+        run: |
+          # install-llvm-action exports `llvm-path`; libclang.dll lives in its bin/.
+          LLVM_BIN="${{ steps.llvm.outputs.llvm-path }}/bin"
+          if [ ! -f "$LLVM_BIN/libclang.dll" ] && [ ! -f "$LLVM_BIN/clang.dll" ]; then
+            for d in "/c/Program Files/LLVM/bin" "/c/llvm/bin" "/c/Program Files (x86)/LLVM/bin"; do
+              if [ -f "$d/libclang.dll" ] || [ -f "$d/clang.dll" ]; then
+                LLVM_BIN="$d"; break
+              fi
+            done
+          fi
+          echo "LIBCLANG_PATH=$LLVM_BIN" >> "$GITHUB_ENV"
+          echo "libclang-path=$LLVM_BIN" >> "$GITHUB_OUTPUT"
+          echo "Resolved LIBCLANG_PATH=$LLVM_BIN"
+
       - uses: oven-sh/setup-bun@v2
 
       - uses: Swatinem/rust-cache@v2
@@ -50,7 +66,7 @@ jobs:
       - name: Build Windows installer
         run: bun tauri build
         env:
-          LIBCLANG_PATH: ${{ steps.llvm.outputs.libclang-path }}
+          LIBCLANG_PATH: ${{ env.LIBCLANG_PATH }}
 
       - name: Upload installer
         uses: actions/upload-artifact@v7
