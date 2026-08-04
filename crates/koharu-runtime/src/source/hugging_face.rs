@@ -87,7 +87,8 @@ impl<'a> HuggingFaceFile<'a> {
         let target = snapshot_path(self.repository, &revision, self.filename);
         Store::file(target, move |stage| async move {
             let url = format!(
-                "https://huggingface.co/{}/resolve/{revision}/{}",
+                "{}/{}/resolve/{revision}/{}",
+                hf_endpoint(),
                 self.repository, self.filename
             );
             Transfer::new()?.fetch(&url, &stage).await
@@ -112,7 +113,7 @@ async fn latest_revision(repository: &str) -> anyhow::Result<String> {
                 sha: String,
             }
 
-            let url = format!("https://huggingface.co/api/models/{repository}");
+            let url = format!("{}/api/models/{repository}", hf_endpoint());
             let response = Transfer::new()?
                 .get(&url)
                 .send()
@@ -132,6 +133,23 @@ async fn latest_revision(repository: &str) -> anyhow::Result<String> {
         })
         .await
         .cloned()
+}
+
+/// Returns the Hugging Face endpoint used for both metadata and file downloads.
+///
+/// The default points at `hf-mirror.com`, a China-accessible mirror of
+/// `huggingface.co` with an identical URL layout, so downloads work without
+/// extra configuration behind the Great Firewall. Override it with the
+/// standard `HF_ENDPOINT` environment variable (for example
+/// `https://huggingface.co`) to use the official endpoint or any other
+/// API-compatible mirror.
+fn hf_endpoint() -> String {
+    std::env::var("HF_ENDPOINT")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.trim_end_matches('/').to_owned())
+        .unwrap_or_else(|| "https://hf-mirror.com".to_owned())
 }
 
 fn snapshot_path(repository: &str, revision: &str, filename: &str) -> PathBuf {

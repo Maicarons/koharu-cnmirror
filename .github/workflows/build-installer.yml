@@ -1,0 +1,62 @@
+name: Build Windows Installer
+
+# Builds a Windows installer (MSI + NSIS) for testing on the user's fork.
+# Triggers automatically on push to main and can also be run manually.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows-installer:
+    name: Windows installer
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install LLVM (libclang for bindgen)
+        id: llvm
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "17"
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@master
+        with:
+          cuda: '13.0.0'
+          method: 'network'
+          sub-packages: '["nvcc", "cudart", "crt", "thrust", "nvvm", "cublas", "cublas_dev", "cufft", "cufft_dev", "curand", "curand_dev", "nvrtc", "nvrtc_dev"]'
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build Windows installer
+        run: bun tauri build
+        env:
+          LIBCLANG_PATH: ${{ steps.llvm.outputs.libclang-path }}
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: koharu-windows-installer
+          path: |
+            target/release/bundle/**/*.msi
+            target/release/bundle/**/*.exe
+          retention-days: 14

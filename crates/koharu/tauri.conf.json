@@ -1,6 +1,6 @@
 {
   "$schema": "../../node_modules/@tauri-apps/cli/config.schema.json",
-  "identifier": "Koharu",
+  "identifier": "rs.koharu.koharu",
   "build": {
     "devUrl": "http://localhost:3000",
     "frontendDist": "../../packages/koharu/out",
@@ -52,7 +52,7 @@
         }
       }
     ],
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": false
   },
   "plugins": {
     "updater": {
