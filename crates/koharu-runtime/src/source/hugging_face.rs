@@ -77,27 +77,50 @@ impl<'a> HuggingFaceFile<'a> {
             self.filename
         );
 
-        let revision = match self.revision {
+        // Validate a pinned revision up front, then try every download source in
+        // priority order. ModelScope is preferred for direct access in China;
+        // Hugging Face (hf-mirror by default) is the fallback for repositories
+        // that ModelScope does not mirror.
+        let pinned = match self.revision {
             Revision::Pinned(revision) => {
                 ensure!(is_commit(revision), "invalid pinned revision {revision}");
-                revision.to_owned()
+                Some(revision)
             }
-            Revision::Latest => latest_revision(self.repository).await?,
+            Revision::Latest => None,
         };
-        let target = snapshot_path(self.repository, &revision, self.filename);
-        Store::file(target, move |stage| async move {
-            let url = format!(
-                "{}/{}/resolve/{revision}/{}",
-                hf_endpoint(),
-                self.repository, self.filename
-            );
-            Transfer::new()?.fetch(&url, &stage).await
-        })
-        .await
+
+        let mut last_error = None;
+        for source in [Source::ModelScope, Source::HuggingFace] {
+            let revision = match pinned {
+                Some(revision) => revision.to_owned(),
+                None => source.latest_revision(self.repository).await?,
+            };
+            let target = snapshot_path(self.repository, &revision, self.filename);
+            match Store::file(target, {
+                let repository = self.repository;
+                let filename = self.filename;
+                let revision = revision.clone();
+                move |stage| async move {
+                    let url = source.file_url(repository, &revision, filename);
+                    Transfer::new()?.fetch(&url, &stage).await
+                }
+            })
+            .await
+            {
+                Ok(path) => return Ok(path),
+                Err(error) => {
+                    last_error = Some(error);
+                    continue;
+                }
+            }
+        }
+        Err(last_error.unwrap_or_else(|| {
+            anyhow::anyhow!("all download sources failed for {}", self.repository)
+        }))
     }
 }
 
-async fn latest_revision(repository: &str) -> anyhow::Result<String> {
+async fn hf_latest_revision(repository: &str) -> anyhow::Result<String> {
     let revision = {
         let mut revisions = REVISIONS.lock().await;
         revisions
@@ -150,6 +173,93 @@ fn hf_endpoint() -> String {
         .filter(|value| !value.is_empty())
         .map(|value| value.trim_end_matches('/').to_owned())
         .unwrap_or_else(|| "https://hf-mirror.com".to_owned())
+}
+
+/// A download backend for model files.
+///
+/// ModelScope is tried first because it is directly reachable in China; the
+/// Hugging Face endpoint (hf-mirror by default) is the fallback for any
+/// repository that ModelScope does not mirror.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Source {
+    ModelScope,
+    HuggingFace,
+}
+
+impl Source {
+    /// Resolves the revision string used in this source's download URL.
+    ///
+    /// For Hugging Face we resolve the repository head to an immutable commit so
+    /// a model is never assembled from mismatched revisions. ModelScope mirrors
+    /// a subset of repositories and does not always carry the exact Hugging Face
+    /// commit, so we use its default branch (`master`) instead.
+    async fn latest_revision(self, repository: &str) -> anyhow::Result<String> {
+        match self {
+            Source::HuggingFace => hf_latest_revision(repository).await,
+            Source::ModelScope => Ok("master".to_owned()),
+        }
+    }
+
+    /// Builds the direct download URL for a single file from this source.
+    fn file_url(self, repository: &str, revision: &str, filename: &str) -> String {
+        match self {
+            Source::HuggingFace => format!(
+                "{}/{}/resolve/{}/{}",
+                hf_endpoint(),
+                repository,
+                revision,
+                filename
+            ),
+            Source::ModelScope => format!(
+                "{}/api/v1/models/{}/repo?Revision={}&FilePath={}",
+                modelscope_endpoint(),
+                repository,
+                revision,
+                encode_query(filename)
+            ),
+        }
+    }
+}
+
+/// Returns the ModelScope endpoint used for file downloads.
+///
+/// The default is the public `modelscope.cn` hub, which is directly reachable
+/// in China. Override it with the standard `MODELSCOPE_ENDPOINT` environment
+/// variable.
+fn modelscope_endpoint() -> String {
+    std::env::var("MODELSCOPE_ENDPOINT")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.trim_end_matches('/').to_owned())
+        .unwrap_or_else(|| "https://modelscope.cn".to_owned())
+}
+
+/// Percent-encodes a value for use inside a ModelScope query parameter, keeping
+/// only the RFC 3986 unreserved characters literal.
+fn encode_query(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                encoded.push(byte as char)
+            }
+            _ => {
+                encoded.push('%');
+                encoded.push(
+                    char::from_digit(u32::from(byte >> 4), 16)
+                        .unwrap()
+                        .to_ascii_uppercase(),
+                );
+                encoded.push(
+                    char::from_digit(u32::from(byte & 0xf), 16)
+                        .unwrap()
+                        .to_ascii_uppercase(),
+                );
+            }
+        }
+    }
+    encoded
 }
 
 fn snapshot_path(repository: &str, revision: &str, filename: &str) -> PathBuf {
