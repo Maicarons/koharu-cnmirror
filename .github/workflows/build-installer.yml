@@ -85,6 +85,19 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Disable code signing for CI (unsigned test build)
+        shell: pwsh
+        run: |
+          $cfg = "crates/koharu/tauri.windows.conf.json"
+          $json = Get-Content $cfg -Raw | ConvertFrom-Json
+          if ($json.bundle.windows.PSObject.Properties.Match("signCommand")) {
+            $json.bundle.windows.PSObject.Properties.Remove("signCommand")
+            $json | ConvertTo-Json -Depth 20 | Set-Content $cfg
+            Write-Host "Removed signCommand from $cfg (CI will build an unsigned installer)"
+          } else {
+            Write-Host "No signCommand present; leaving config as-is"
+          }
+
       - name: Build Windows installer
         run: bun tauri build
         env:
