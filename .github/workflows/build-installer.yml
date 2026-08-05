@@ -20,11 +20,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install LLVM (libclang for bindgen)
+      - name: Install LLVM (libclang for bindgen + clang-cl for koharu-torch-sys)
         id: llvm
         uses: KyleMayes/install-llvm-action@v2
         with:
-          version: "17"
+          # Must be >= 19: koharu-torch-sys hardcodes clang-cl, and MSVC 2022's
+          # STL (14.44) static-asserts `STL1000: expected Clang 19.0.0 or newer`.
+          version: "19"
 
       - name: Export LIBCLANG_PATH
         shell: bash
