@@ -1,3 +1,4 @@
+mod asset;
 mod cuda;
 mod diffusion;
 mod llama;

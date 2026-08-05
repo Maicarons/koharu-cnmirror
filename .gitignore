@@ -56,3 +56,7 @@ site/
 
 # SponsorKit runtime cache (the generated SVG is tracked)
 .cache.json
+
+# CI-bundled runtime assets (llama.cpp / stable-diffusion backends)
+/runtime-assets/*
+!/runtime-assets/.gitkeep

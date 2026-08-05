@@ -5,12 +5,11 @@ use strum::EnumProperty;
 
 use crate::{
     Hardware, Store,
-    downloads::Transfer,
     runtime::{
         DiscoverablePackage, Package, RuntimePackage,
         graph::Component,
         loader,
-        packages::{Cuda, Rocm},
+        packages::{Cuda, Rocm, asset::fetch_runtime_asset},
         sealed,
     },
     source::extract,
@@ -91,11 +90,7 @@ impl Package for Diffusion {
             move |path| self.complete(path),
             move |stage| async move {
                 let asset = self.asset();
-                let url = format!(
-                    "https://github.com/mayocream/koharu/releases/download/{RELEASE}/{asset}"
-                );
-                let archive = tempfile::Builder::new().suffix(".tar.gz").tempfile()?;
-                Transfer::new()?.fetch(&url, archive.path()).await?;
+                let archive = fetch_runtime_asset(RELEASE, asset, &stage).await?;
                 extract(
                     archive.path(),
                     &stage,

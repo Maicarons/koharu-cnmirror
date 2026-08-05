@@ -98,6 +98,25 @@ jobs:
             Write-Host "No signCommand present; leaving config as-is"
           }
 
+      - name: Download bundled runtime assets (bypasses GitHub release download at runtime)
+        shell: bash
+        run: |
+          mkdir -p runtime-assets
+          echo "Downloading llama.cpp Windows backends..."
+          gh release download llama.cpp-b9982 -R mayocream/koharu \
+            -p "llama-cuda-windows-2022.tar.gz" \
+            -p "llama-hip-windows-2022.tar.gz" \
+            -p "llama-vulkan-windows-2022.tar.gz" \
+            -D runtime-assets
+          echo "Downloading stable-diffusion.cpp Windows backends..."
+          gh release download stable-diffusion.cpp-master-769-cc73429 -R mayocream/koharu \
+            -p "stable-diffusion-cuda-windows-2022.tar.gz" \
+            -p "stable-diffusion-hip-windows-2022.tar.gz" \
+            -p "stable-diffusion-vulkan-windows-2022.tar.gz" \
+            -D runtime-assets
+          echo "Bundled runtime assets:"
+          ls -lh runtime-assets
+
       - name: Build Windows installer
         run: bun tauri build
         env:
